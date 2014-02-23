@@ -38,6 +38,12 @@ public:
         :Fl_Group(x,y,280,n*20+10)
     {end();}
 
+    void draw_overlay_highlights(void)
+    {
+        for(int i=0; i<children(); ++i)
+            if(auto *slider = dynamic_cast<Slider*>(child(i)))
+                fl_rect(slider->x(),slider->y(),slider->w(),slider->h());
+    }
     void add(const char *label, const char *val, int fillage)
     {
         begin();

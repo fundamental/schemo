@@ -15,7 +15,16 @@ public:
     View(int x, int y)
         :Fl_Group(x,y,550,130)
     {}
-    void draw_overlay_highlights(void);
+    void draw_overlay_highlights(void)
+    {
+        fl_color(0xff,0xee,0x4e);
+        fl_line_style(FL_SOLID,1);
+        for(int i=0; i<children(); ++i)
+        {
+            if(auto *pack = dynamic_cast<SliderVpack*>(child(i)))
+                pack->draw_overlay_highlights();
+        }
+    }
     void draw_overlay_labels(void);
     const char *getAddress(int x, int y);
 };
@@ -35,6 +44,14 @@ public:
         for(auto view:views)
             view->hide();
         views[idx]->show();
+    }
+
+    View &active(void)
+    {
+        for(auto view:views)
+            if(view->visible())
+                return *view;
+        assert(0);
     }
     std::vector<View*> views;
 };

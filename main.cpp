@@ -41,7 +41,7 @@ public:
         if(state == 3)
             draw_overlay(0,300);
         if(state == 4) {
-            draw_highlights(0,300);
+            vs.active().draw_overlay_highlights();
             draw_overlay(0,300);
         }
 
@@ -66,28 +66,11 @@ public:
         return Fl_Group::handle(ev);
     }
 
-    void draw_highlights(int x, int y)
-    {
-        fl_color(0xff,0xee,0x4e);
-        fl_line_style(FL_SOLID,1);
-        draw_controls_bound_box(x+255,y+10,5);
-    }
-
-
     void draw_overlay(int x, int y)
     {
         draw::capped_label(x+415, y+56, 27,14, "18");
         draw::capped_label(x+415, y+76, 27,14, "23");
     }
-
-
-    void draw_controls_bound_box(int x, int y, int n)
-    {
-        //Draw sliders
-        for(int i=0; i<n; ++i)
-            fl_rect(x+80-2,y+10+20*i-4, 105, 19);
-    }
-
 
     ViewSet vs;
     int state;
