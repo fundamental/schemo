@@ -58,12 +58,12 @@ public:
 
     int handle(int ev) override
     {
-        if(ev == FL_PUSH) {
+        if(ev == FL_PUSH && Fl::event_button2()) {
             state = (state+1)%7;
             vs.select(state%vs.views.size());
             draw();
         }
-        return Fl_Widget::handle(ev);
+        return Fl_Group::handle(ev);
     }
 
     void draw_highlights(int x, int y)

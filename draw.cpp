@@ -91,13 +91,13 @@ void slider(int x,int y, int w)
     fl_color(0,0,0);
     fl_line_style(FL_SOLID, 1);
     fl_color(80,80,80);
-    fl_rectf(x,y,100,12);
+    fl_rectf(x,y+4,100,12);
     fl_color(0xeb,0x90,0x00);
-    fl_rectf(x,y,w,12);
+    fl_rectf(x,y+4,w,12);
     fl_color(0,0,0);
-    fl_rect(x,y,100,12);
+    fl_rect(x,y+4,100,12);
     fl_color(0,0,0);
-    fl_rectf(x+w,y-3,6,18);
+    fl_rectf(x+w,y+4-3,6,18);
 }
 
 void sinplot(int x, int y, int w, int h)
