@@ -38,7 +38,7 @@ public:
     }
     std::vector<View*> views;
 };
-    
+
 class ControlView:public View
 {
 public:
@@ -90,23 +90,21 @@ class MixerView:public View
 public:
     MixerView(int x, int y)
         :View(x,y)
-    {end();}
+    {
+        auto *osc1 = new Input2D(x+60,y+20,200,100);
+        osc1->setCursor(20,10);
+
+        auto *osc2 = new Input2D(x+330, y+20, 200, 100);
+        osc2->setCursor(100,60);
+        end();
+    }
     
     void draw(void) override
     {
         fl_color(255,255,255);
         fl_draw("OSC 1", x()+10, y()+70);
-        draw::grid(x()+60,y()+20,200,100);
-        fl_line_style(FL_SOLID,2);
-        fl_color(0xeb,0x90,0x00);
-        fl_arc(x()+80, y()+30, 10, 10,0,360);
-
-        fl_color(255,255,255);
         fl_draw("OSC 2", x()+280, y()+70);
-        draw::grid(x()+330,y()+20,200,100);
-        fl_line_style(FL_SOLID,2);
-        fl_color(0xeb,0x90,0x00);
-        fl_arc(x()+430, y()+80, 10, 10,0,360);
+        draw_children();
     }
 };
 
@@ -116,6 +114,7 @@ public:
     OscView(int x, int y, bool sync)
         :View(x,y), hasSync(sync)
     {
+        new Plot(x+20, y+20, 200, 100);
         auto *pack = new SliderVpack(x+255,y+10,5);
         if(sync) {
             pack->add("Square Mix", "7.0%",        7);
@@ -131,13 +130,6 @@ public:
         }
 
         end();
-    }
-    
-    void draw(void) override
-    {
-        draw::grid(x()+20,y()+20, 200,100);
-        draw::sinplot2(x()+20,y()+20, 200,100);
-        draw_children();
     }
 
     bool hasSync;

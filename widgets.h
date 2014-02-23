@@ -45,19 +45,37 @@ public:
 class Plot:public Fl_Widget
 {
 public:
+    Plot(int x, int y, int w, int h)
+        :Fl_Widget(x,y,w,h)
+    {}
     void draw(void)
     {
         draw::grid(x(),y(),w(),h());
+        draw::sinplot2(x(),y(),w(),h());
     }
 };
 
 class Input2D:public Fl_Widget
 {
 public:
+    Input2D(int x, int y, int w, int h)
+        :Fl_Widget(x,y,w,h),cursorX(x+w/2),cursorY(y+h/2)
+    {}
+    void setCursor(int x,int y)
+    {
+        cursorX=x;
+        cursorY=y;
+    }
     void draw(void)
     {
         draw::grid(x(),y(),w(),h());
+
+        fl_line_style(FL_SOLID,2);
+        fl_color(0xeb,0x90,0x00);
+        fl_arc(x()+cursorX, y()+cursorY, 10, 10,0,360);
     }
+    int cursorX;
+    int cursorY;
 };
 
 class Slider:public Fl_Widget
