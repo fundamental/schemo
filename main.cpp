@@ -5,6 +5,7 @@
 #include <cmath>
 #include "draw.h"
 #include "view.h"
+#include "synth.h"
 
 void draw_undo(int x, int y)
 {
@@ -16,8 +17,8 @@ void draw_undo(int x, int y)
 class FooClass:public Fl_Group
 {
 public:
-    FooClass(int x, int y)
-        :Fl_Group(x,y,750,430),state(1)
+    FooClass(int x, int y, Synth &synth)
+        :Fl_Group(x,y,750,430),vs(synth),state(1)
     {
         vs.add(new ControlView(0,300));
         vs.add(new MixerView(0,300));
@@ -25,6 +26,7 @@ public:
         vs.add(new OscView(0,300,false));
         vs.add(new AmpView(0,300));
     }
+
     void draw(void) override
     {
         draw::schematic();
@@ -78,9 +80,14 @@ public:
 
 int main()
 {
+    Synth synth;
     Fl_Window *w  = new Fl_Double_Window(750,430, "Schemo");
-    auto foo = new FooClass(0,0);
+    auto foo = new FooClass(0,0, synth);
     (void) foo;
     w->show();
-    return Fl::run();
+    setup_jack();
+    while(w->visible())
+        Fl::wait(0.1);
+    printf("Done...\n");
+    return 0;
 }
