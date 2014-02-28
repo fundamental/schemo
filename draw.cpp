@@ -127,6 +127,29 @@ void sinplot2(int x, int y, int w, int h)
     sinplot(x,y,w,h);
 }
 
+void plot(int x, int y, int w, int h, float *smps)
+{
+    fl_line_style(FL_SOLID, 2);
+    fl_color(0xdb,0x70,0x00);
+    fl_begin_polygon();
+    fl_vertex(x,y+h/2.0);
+    for(int i=0; i<w+1; ++i) {
+        float mag = 0.5+smps[i]/2;
+        fl_vertex(x+i,y+mag*h);
+    }
+    fl_vertex(x+w,y+h/2.0);
+    fl_end_polygon();
+
+    fl_line_style(FL_SOLID, 2);
+    fl_color(0,0,0);
+    fl_begin_line();
+    for(int i=0; i<w+1; ++i) {
+        float mag = 0.5+smps[i]/2;
+        fl_vertex(x+i,y+mag*h);
+    }
+    fl_end_line();
+}
+
 /**********************************
  * Section 3 Prerendered elements *
  **********************************/
@@ -214,7 +237,7 @@ void schematic(void)
     fl_vertex(513,150);
     fl_end_polygon();
 }
-    
+
 void env(int x, int y)
 {
     (void) y;

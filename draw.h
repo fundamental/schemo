@@ -16,6 +16,7 @@ void slider(int x,int y, int w);
 
 void sinplot(int x, int y, int w, int h);
 void sinplot2(int x, int y, int w, int h);
+void plot(int x, int y, int w, int h, float *smps);
 
 //PreRendered Elements (4)
 void schematic(void);

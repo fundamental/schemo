@@ -8,6 +8,7 @@
 
 
 using rtosc::Ports;
+#define rUnit(x) rMap(unit, x)
 
 
 /**************
@@ -16,6 +17,7 @@ using rtosc::Ports;
 
 
 struct EnvPars {
+    float volume = 0.0;   //dB
     float atime  = 100.0; //ms
     float dtime  = 10.0;  //ms
     float svalue = -2.0;  //dB
@@ -34,7 +36,7 @@ struct MixPars {
 struct OscilPars {
     float mix_sin = 0.0;
     float mix_sqr = 0.0;
-    float mix_saw = 0.0;
+    float mix_saw = 1.0;
     float detune  = 0.0;
     bool sync     = true;
     static Ports ports;
@@ -42,26 +44,27 @@ struct OscilPars {
 
 #define rObject EnvPars
 Ports EnvPars::ports = {
-    rParamF(atime, rLinear(0,1000.0), "Attack Time"),
-    rParamF(dtime, rLinear(0,1000.0), "Decay Time"),
-    rParamF(rtime, rLinear(0,1000.0), "Release Time"),
-    rParamF(svalue, rLinear(-10,0),   "Sustain Value"),
+    rParamF(volume, rLinear(-4,0),    rUnit(dB), "Max Volume"),
+    rParamF(atime, rLinear(0,1000.0), rUnit(ms), "Attack Time"),
+    rParamF(dtime, rLinear(0,1000.0), rUnit(ms), "Decay Time"),
+    rParamF(rtime, rLinear(0,1000.0), rUnit(ms), "Release Time"),
+    rParamF(svalue, rLinear(-10,0),   rUnit(dB), "Sustain Value"),
 };
 #undef rObject
 #define rObject MixPars
 Ports MixPars::ports {
-    rParamF(pan1, rLinear(0,1), "Oscillator 1 Panning"),
-    rParamF(pan2, rLinear(0,1), "Oscillator 2 Panning"),
-    rParamF(level1, rLinear(0,1), "Oscillator 1 Relative Level"),
-    rParamF(level2, rLinear(0,1), "Oscillator 2 Relative Level"),
+    rParamF(pan1, rLinear(0,1),   rUnit(panning), "Oscillator 1 Panning"),
+    rParamF(pan2, rLinear(0,1),   rUnit(panning), "Oscillator 2 Panning"),
+    rParamF(level1, rLinear(0,1), rUnit(percent), "Oscillator 1 Relative Level"),
+    rParamF(level2, rLinear(0,1), rUnit(percent), "Oscillator 2 Relative Level"),
 };
 #undef rObject
 #define rObject OscilPars
 Ports OscilPars::ports {
-    rParamF(mix_sin, rLinear(0,1), "Sin Mixture"),
-    rParamF(mix_sqr, rLinear(0,1), "Square Mixture"),
-    rParamF(mix_saw, rLinear(0,1), "Sawtooth Mixture"),
-    rParamF(detune,  rLinear(-2400,2400), "Detune Amount"),
+    rParamF(mix_sin, rLinear(0,1), rUnit(percent), "Sin Mixture"),
+    rParamF(mix_sqr, rLinear(0,1), rUnit(percent), "Square Mixture"),
+    rParamF(mix_saw, rLinear(0,1), rUnit(percent), "Sawtooth Mixture"),
+    rParamF(detune,  rLinear(-2400,2400), rUnit(cents), "Detune Amount"),
     rToggle(sync, "Sync to another Oscillator"),
 };
 #undef rObject
@@ -120,11 +123,12 @@ enum env_stage
 };
 
 struct EnvState {
+    EnvState(EnvPars &ep):pars(ep){}
     float current   = 0.0;
     float coeff     = 0.0;
     env_stage stage = ENV_IDLE;
     int countdown   = 0;
-    EnvPars pars;
+    EnvPars &pars;
 };
 
 struct OscilState {
@@ -137,7 +141,7 @@ struct OscilState {
 struct Synth_ 
 {
     Synth_(void)
-        :osc1(osc1p), osc2(osc2p)
+        :osc1(osc1p), osc2(osc2p), env(envp)
     {}
     NoteActivity notes;
     float baseFreq = 440.0;
@@ -163,8 +167,8 @@ Ports Synth_::ports = {
  ***********/
 
 #define OSCIL_SIZE 512
-//static float sqr_table[12][OSCIL_SIZE];
-//static float saw_table[12][OSCIL_SIZE];
+static float sqr_table[12][OSCIL_SIZE];
+static float saw_table[12][OSCIL_SIZE];
 static float sin_table[12][OSCIL_SIZE];
 static float table_freqs[12];
 float sampleRate = 0.0;
@@ -263,7 +267,7 @@ void create_wavetables(int type, float Fs, float tables[12][OSCIL_SIZE], float f
             tables[0][i] = sin(2*M_PI*i*1.0/OSCIL_SIZE);
     else if(type == 1)
         for(int i=0; i<OSCIL_SIZE; ++i)
-            tables[0][i] = i*2.0/OSCIL_SIZE - 1.0;
+            tables[0][i] = 1.0-i*2.0/OSCIL_SIZE;
     else if(type == 2)
         for(int i=0; i<OSCIL_SIZE; ++i)
             tables[0][i] = i < OSCIL_SIZE/2 ? 1.0 : -1.0;
@@ -325,6 +329,7 @@ void env_handle_gate(EnvState &env, bool gate)
 
 void env_out(float *cv,  EnvState &env, unsigned smps)
 {
+    float scale = dBtoRaw(env.pars.volume);
     unsigned i = 0;
     //Finite state automita, aka goto is normal
 new_state:
@@ -333,7 +338,7 @@ new_state:
     {
         case ENV_ATTACK:
             for(; i<smps && env.countdown; ++i, env.countdown--)
-                cv[i] = env.current *= env.coeff;
+                cv[i] = scale*(env.current *= env.coeff);
             if(!env.countdown) {
                 env.stage = ENV_DECAY;
                 env.countdown = sampleRate*1e-3*env.pars.dtime;
@@ -345,7 +350,7 @@ new_state:
             break;
         case ENV_DECAY:
             for(; i<smps && env.countdown; ++i, env.countdown--)
-                cv[i] = env.current *= env.coeff;
+                cv[i] = scale*(env.current *= env.coeff);
             if(!env.countdown) {
                 env.stage = ENV_SUSTAIN;
                 env.coeff = 1.0;
@@ -354,11 +359,11 @@ new_state:
             break;
         case ENV_SUSTAIN:
             for(; i<smps; ++i)
-                cv[i] = env.current;
+                cv[i] = scale*env.current;
             break;
         case ENV_RELEASE:
             for(; i<smps && env.countdown; ++i, env.countdown--)
-                cv[i] = env.current *= env.coeff;
+                cv[i] = scale*(env.current *= env.coeff);
             if(!env.countdown) {
                 env.stage = ENV_IDLE;
                 env.coeff = 1.0;
@@ -394,6 +399,16 @@ void run_osc(float *out, const float *sync, OscilState &osc,
             table = i;
 
     float delta = fq/sampleRate;
+    float mix_sin = osc.pars.mix_sin;
+    float mix_saw = osc.pars.mix_saw;
+    float mix_sqr = osc.pars.mix_sqr;
+    float scale   = mix_sin+mix_saw+mix_sqr;
+    if(scale > 1e-4) {
+        mix_sin /= scale;
+        mix_saw /= scale;
+        mix_sqr /= scale;
+    }
+
     if(sync && osc.pars.sync) {
         for(unsigned i=0; i<smps; ++i)
         {
@@ -406,14 +421,20 @@ void run_osc(float *out, const float *sync, OscilState &osc,
             osc.phase_minus = sync[i] < 0;
 
             
-            out[i] = interpolate(sin_table[table], OSCIL_SIZE, osc.phase);
+            out[i] = 0;
+            out[i] += mix_sin*interpolate(sin_table[table], OSCIL_SIZE, osc.phase);
+            out[i] += mix_saw*interpolate(saw_table[table], OSCIL_SIZE, osc.phase);
+            out[i] += mix_sqr*interpolate(sqr_table[table], OSCIL_SIZE, osc.phase);
         }
     } else {
         for(unsigned i=0; i<smps; ++i) {
             osc.phase += delta;
             if(osc.phase > 1.0)
                 osc.phase -= 1;
-            out[i] = interpolate(sin_table[table], OSCIL_SIZE, osc.phase);
+            out[i] = 0;
+            out[i] += mix_sin*interpolate(sin_table[table], OSCIL_SIZE, osc.phase);
+            out[i] += mix_saw*interpolate(saw_table[table], OSCIL_SIZE, osc.phase);
+            out[i] += mix_sqr*interpolate(sqr_table[table], OSCIL_SIZE, osc.phase);
         }
     }
 }
@@ -494,12 +515,13 @@ class DispatchData:public rtosc::RtData
 
         void broadcast(const char *path, const char *args, ...)
         {
+            bToU.write("/broadcast","");
             va_list va;
             va_start(va,args);
             const size_t len =
                 rtosc_vmessage(bToU.buffer(),bToU.buffer_size(),path,args,va);
             if(len)
-                broadcast(bToU.buffer());
+                bToU.raw_write(bToU.buffer());
         }
 
 
@@ -521,6 +543,115 @@ void handleEvents(void)
         if(d.matches == 0)
             fprintf(stderr, "MISSING ADDRESS '%s'\n", uToB.peak());
         d.matches = 0;
+    }
+}
+
+/*************
+ * UI Magics *
+ *************/
+const rtosc::Port *getPort(rtosc::Ports &p, const char *path)
+{
+    return p.apropos(path);
+}
+char portType(const char *pattern)
+{
+    const char *nstr = index(pattern, ':');
+    assert(nstr);
+    for(int i=0; i<(int)strlen(nstr); ++i)
+    {
+        switch(nstr[i])
+        {
+            case 'f':
+            case 'T':
+                return nstr[i];
+        }
+    }
+    return 0;
+}
+
+void writeNormFloat(const char *addr, float f)
+{
+    assert(addr && addr[0]=='/');
+    const rtosc::Port *p = getPort(Synth_::ports, addr);
+    if(!p) {
+        fprintf(stderr, "Invalid url '%s'\n", addr);
+        return;
+    }
+    char type = portType(p->name);
+    if(type == 'T') {
+        uToB.write(addr, f>0.5?"T":"F");
+    } else if(type == 'f') {
+        //always assume linear map [FIXME]
+        float min_ = atof(p->meta()["min"]);
+        float max_ = atof(p->meta()["max"]);
+        uToB.write(addr,"f", min_+(max_-min_)*f);
+    }
+}
+
+std::string formatter(std::string unit, float val)
+{
+    char buffer[1024] ={0};
+    if(unit == "percent")
+        snprintf(buffer, 1023, "%.1f%%",100*val);
+    else if(unit == "dB")
+        snprintf(buffer, 1023, "%.2f dB", val);
+    else if(unit == "cents")
+        snprintf(buffer, 1023, "%d cents", (int)val);
+    else if(unit == "ms")
+        snprintf(buffer, 1023, "%d ms", (int)val);
+    else
+        snprintf(buffer, 1023, "(NULL)");
+
+    return buffer;
+    
+}
+
+void handleUpdates(std::function<void(const char *addr, std::string, float)> cb)
+{
+    using rtosc::msg_t;
+    using rtosc::Port;
+    while(bToU.hasNext()) {
+        //assume all messages are UI only FIXME
+        msg_t msg = bToU.read();
+        printf("return address '%s'\n", msg);
+        if(!strcmp("undo_change", msg) || !strcmp("/broadcast", msg))
+            continue;
+        const Port *p = getPort(Synth_::ports, msg);
+        printf("return address '%s'\n", msg);
+        assert(p);
+        char type = portType(p->name);
+        if(type == 'T') {
+            if(rtosc_argument(msg,0).T)
+                cb(msg, "On", 1.0);
+            else
+                cb(msg, "Off", 0.0);
+        } else if(type == 'f') {
+            //always assume linear map [FIXME]
+            float v    = rtosc_argument(msg,0).f;
+            float min_ = atof(p->meta()["min"]);
+            float max_ = atof(p->meta()["max"]);
+            cb(msg, formatter(p->meta()["unit"],v), (v-min_)/(max_-min_));
+        }
+    }
+}
+
+void renderWave(float *out, unsigned nsmps, float a, float b, float c)
+{
+    float delta = 1.0/nsmps;
+    float mix_sin = a;
+    float mix_saw = b;
+    float mix_sqr = c;
+    float scale   = mix_sin+mix_saw+mix_sqr;
+    if(scale > 1e-4) {
+        mix_sin /= scale;
+        mix_saw /= scale;
+        mix_sqr /= scale;
+    }
+
+    for(unsigned i=0; i<nsmps; ++i) {
+        out[i] =  mix_sin*interpolate(sin_table[0], OSCIL_SIZE, i*delta);
+        out[i] += mix_saw*interpolate(saw_table[0], OSCIL_SIZE, i*delta);
+        out[i] += mix_sqr*interpolate(sqr_table[0], OSCIL_SIZE, i*delta);
     }
 }
 
@@ -587,8 +718,11 @@ void setup_jack(void)
     }
     
     //Setup parameters
-    synth.osc1.pars.detune = -1212;
-    create_wavetables(1, sampleRate, sin_table, table_freqs);
+    synth.osc1.pars.detune = -12;
+    synth.osc2.pars.sync   = false;
+    create_wavetables(0, sampleRate, sin_table, table_freqs);
+    create_wavetables(1, sampleRate, saw_table, table_freqs);
+    create_wavetables(2, sampleRate, sqr_table, table_freqs);
 }
 
 void close_jack(void)

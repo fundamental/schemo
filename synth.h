@@ -25,7 +25,9 @@ class Synth
 
 
 void setup_jack(void);
-void write_norm_float(const char *addr, float f);
-void handleUpdates(std::function<void(std::string, float)> cb);
+void writeNormFloat(const char *addr, float f);
+void handleUpdates(std::function<void(const char *,std::string, float)> cb);
+
+void renderWave(float *smps, unsigned nsmps, float a, float b, float c);
 
 

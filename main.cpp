@@ -86,8 +86,14 @@ int main()
     (void) foo;
     w->show();
     setup_jack();
-    while(w->visible())
+    while(w->visible()) {
         Fl::wait(0.1);
+        handleUpdates([foo](const char *addr, std::string s, float f)
+                {
+                foo->vs.propigate(addr, s, f);
+                });
+        
+    }
     printf("Done...\n");
     return 0;
 }

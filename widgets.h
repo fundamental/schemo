@@ -30,13 +30,16 @@ public:
     Widget(int x, int y, int w, int h)
         :Fl_Widget(x,y,w,h)
     {}
+
+    virtual void updateParam(int, float){}
+    virtual void updateLabel(int, std::string){};
 };
 
-class Slider:public Fl_Widget
+class Slider:public Widget
 {
 public:
     Slider(int x, int y)
-        :Fl_Widget(x,y,100,19), value(0), name(0)
+        :Widget(x,y,100,19), value(0), name(0)
     {}
     void draw(void) override {
         draw::slider(x(),y(),value);
@@ -51,15 +54,21 @@ public:
 
         return 0;
     }
+
+    void updateParam(int, float f)
+    {
+        value=f*95;
+    }
+
     int value;
     const char *name;
 };
 
-class SliderVpack:public Fl_Group
+class SliderVpack:virtual Widget, public Fl_Group
 {
 public:
     SliderVpack(int x, int y, int n)
-        :Fl_Group(x,y,280,n*20+10), offset(0)
+        :Widget(x,y,280,n*20+10),Fl_Group(x,y,280,n*20+10),  offset(0)
     {end();}
 
     void draw_overlay_highlights(void)
@@ -72,7 +81,7 @@ public:
             bool bool_=false)
     {
         begin();
-        auto *slider = new Slider(x()+80, y()+5+20*value.size());
+        auto *slider = new Slider(Fl_Group::x()+80, Fl_Group::y()+5+20*value.size());
         slider->value = fillage;
         slider->name  = label;
         slider->callback(SliderVpack::_cb,this);
@@ -100,8 +109,8 @@ public:
         fl_color(255,255,255);
         fl_font(FL_COURIER,14);
         for(int i=0; i<(int)label.size(); ++i) {
-            fl_draw(label[i], x(),     y()+(1+i)*20);
-            fl_draw(val[i],   x()+185, y()+(1+i)*20);
+            fl_draw(label[i], Fl_Group::x(),     Fl_Group::y()+(1+i)*20);
+            fl_draw(val[i],   Fl_Group::x()+185, Fl_Group::y()+(1+i)*20);
         }
 
         draw_children();
@@ -111,6 +120,26 @@ public:
     {
         offset = off;
         callback = foo;
+    }
+    
+    void updateParam(int i, float f)
+    {
+        if(i > (int)sliders.size()) {
+            printf("Bad parameter index\n");
+            return;
+        }
+        sliders[i]->updateParam(0,f);
+    }
+
+    void updateLabel(int i, std::string str)
+    {
+        printf("trying to update label '%d' to '%s'\n", i, str.c_str());
+        if(i > (int)val.size()) {
+            printf("Bad parameter index\n");
+            return;
+        }
+        val[i] = strdup(str.c_str());
+        Fl_Group::redraw();
     }
 
     std::function<void(int,float)> callback;
@@ -145,12 +174,17 @@ class Plot:public Fl_Widget
 public:
     Plot(int x, int y, int w, int h)
         :Fl_Widget(x,y,w,h)
-    {}
+    {
+        smps = new float[w+1];
+        memset(smps, 0, sizeof(float)*w+1);
+    }
     void draw(void)
     {
         draw::grid(x(),y(),w(),h());
-        draw::sinplot2(x(),y(),w(),h());
+        draw::plot(x(),y(),w(),h(), smps);
+        //draw::sinplot2(x(),y(),w(),h());
     }
+    float *smps;
 };
 
 class Input2D:public Fl_Widget
@@ -178,6 +212,7 @@ public:
         cursorX=x;
         cursorY=y;
     }
+
     void draw(void)
     {
         draw::grid(x(),y(),w(),h());
@@ -186,6 +221,15 @@ public:
         fl_color(0xeb,0x90,0x00);
         fl_arc(x()+cursorX, y()+cursorY, 10, 10,0,360);
     }
+
+    void updateParam(int i, float f)
+    {
+        if(i==0)
+            cursorX = f*w();
+        else
+            cursorY = f*h();
+    }
+
     int cursorX;
     int cursorY;
 };

@@ -38,10 +38,22 @@ public:
     std::vector<std::string> addr;
     std::multimap<Widget*,std::string> addresses;
     std::multimap<std::string, std::pair<Widget*,int>> widgets;
-    void changeCb(int i, float f)
+
+    void propigate(const char *addr, std::string s, float f)
+    {
+        auto range = widgets.equal_range(addr);
+        for(auto itr = range.first; itr != range.second; ++itr)
+        {
+            auto val = itr->second;
+            val.first->updateParam(val.second, f);
+            val.first->updateLabel(val.second, s);
+        }
+    }
+    virtual void changeCb(int i, float f)
     {
         printf("Trying to update param #%d(%s) to %f\n",
                 i, addr[i].c_str(), f);
+        writeNormFloat(addr[i].c_str(), f);
     }
 };
 
@@ -81,6 +93,12 @@ public:
             if(view->visible())
                 return *view;
         assert(0);
+    }
+
+    void propigate(const char *addr, std::string s, float f)
+    {
+        for(auto view:views)
+            view->propigate(addr, s, f);
     }
     std::vector<View*> views;
 };
@@ -143,9 +161,9 @@ public:
 
         std::string base = "/mix/";
         addr << base + "pan1"
-             << base + "mix1"
+             << base + "level1"
              << base + "pan2"
-             << base + "mix2";
+             << base + "level2";
     }
     
     void draw(void) override
@@ -172,8 +190,8 @@ public:
     OscView(int x, int y, bool sync)
         :View(x,y), hasSync(sync)
     {
-        new Plot(x+20, y+20, 200, 100);
-        auto *pack = new SliderVpack(x+255,y+10,5);
+        plot = new Plot(x+20, y+20, 200, 100);
+        pack = new SliderVpack(x+255,y+10,5);
         if(sync) {
             pack->add("Square Mix", "7.0%",        7);
             pack->add("Saw Mix",    "30.0%",       30);
@@ -190,19 +208,43 @@ public:
 
         end();
         init_parameters();
+        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[0],
+                    std::pair<Widget*,int>((Widget*)pack,0)));
+        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[1],
+                    std::pair<Widget*,int>((Widget*)pack,1)));
+        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[2],
+                    std::pair<Widget*,int>((Widget*)pack,2)));
+        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[3],
+                    std::pair<Widget*,int>((Widget*)pack,3)));
+        if(sync)
+            widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[4],
+                        std::pair<Widget*,int>((Widget*)pack,4)));
     }
     void init_parameters(void)
     {
-        std::string base = hasSync?"/osc1/":"/osc2/";
-        addr << base + "square-mix"
-             << base + "saw-mix"
-             << base + "sin-mix"
+        std::string base = hasSync?"/osc2p/":"/osc1p/";
+        addr << base + "mix_sqr"
+             << base + "mix_saw"
+             << base + "mix_sin"
              << base + "detune";
         if(hasSync)
             addr << base + "sync";
 
     }
 
+    void changeCb(int i, float f)
+    {
+        View::changeCb(i,f);
+        renderWave(plot->smps, plot->w()+1,
+                pack->sliders[2]->value/95.0,
+                pack->sliders[1]->value/95.0,
+                pack->sliders[0]->value/95.0);
+        plot->redraw();
+
+    }
+
+    Plot *plot;
+    SliderVpack *pack;
     bool hasSync;
 };
 
@@ -221,6 +263,9 @@ public:
         pack->childrenCb(std::bind(&View::changeCb,this,_1,_2));
         end();
         init_parameters();
+        for(int i=0; i<5; ++i)
+            widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[i],
+                        std::pair<Widget*,int>((Widget*)pack,i)));
     }
     
     void draw(void) override
@@ -231,11 +276,11 @@ public:
 
     void init_parameters(void)
     {
-        std::string base = "/amp/";
+        std::string base = "/envp/";
         addr << base + "volume"
-             << base + "sustain"
-             << base + "attack"
-             << base + "decay"
-             << base + "release";
+             << base + "svalue"
+             << base + "atime"
+             << base + "dtime"
+             << base + "rtime";
     }
 };
