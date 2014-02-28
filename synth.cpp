@@ -1,6 +1,8 @@
 #include <cmath>
 #include <cstring>
 #include <cassert>
+#include <cstdio>
+#include <complex>
 #include <stdint.h>
 #include <rtosc/ports.h>
 #include <rtosc/port-sugar.h>
@@ -193,72 +195,6 @@ float get_exp_coeff(float Fs, float ms, float v1, float v2)
     return 1.0+log(v2/v1)/(Fs*ms*1e-3);
 }
 
-
-#if 0
-void FsToWave_table(float *out, float *in, float freq)
-{
-    assert(freq < 1.0);
-    memset(out,0,OSCIL_SIZE*sizeof(float));
-    for(int i=0; (i+1)*freq<1.0 && i<OSCIL_SIZE; ++i)
-        for(int j=0; j<OSCIL_SIZE; ++j)
-            out[j] += in[i]*sinf(2*M_PI*freq*j);
-};
-
-void setup()
-{
-    float saw[OSCIL_SIZE],
-          sqr[OSCIL_SIZE],
-          sin[OSCIL_SIZE];
-    //Populate harmonics
-    for(int i=0; i<OSCIL_SIZE; ++i) {
-        sin[i] = i==0 ? 1.0 : 0.0;
-        sqr[i] = i%2 ? 1.0/OSCIL_SIZE : 0.0;
-        saw[i] = 0.5-i/(OSCIL_SIZE*2*M_PI);
-    }
-
-
-    //Generate Wavetables
-    
-    for(int i=0; i<12; ++i) {
-
-    }
-}
-//Amp Envelope
-
-//Oscillator
-void blit_wavetable(float *out, float *wavetable, int64_t phase, int64_t dt, unsigned smps)
-{
-      for(int i=0;i<smps;++i);
-
-}
-
-int select_table(float);
-
-void oscil(unsigned smps, float freq)
-{
-    float sin_out[smps];
-    float sqr_out[smps];
-    float saw_out[smps];
-
-    int active_table = select_table(freq);
-    int64_t phase;
-    int64_t dt;
-
-    blit_wavetable(sin_out, sin_table[active_table], phase, dt, smps);
-    blit_wavetable(sqr_out, sqr_table[active_table], phase, dt, smps);
-    blit_wavetable(saw_out, saw_table[active_table], phase, dt, smps);
-
-    float mix_scale = min(1/(mix_sin+mix_sqr+mix_saw+1e-9), 1e3);
-
-    out = mixture;
-    phase_tick();
-}
-
-#endif
-
-#include <cstdio>
-#include <complex>
-
 void create_wavetables(int type, float Fs, float tables[12][OSCIL_SIZE], float freqs[12])
 {
     //static_assert((int)(&tables[0][1] - &tables[0][0]) == 4, "table alignment");
@@ -325,7 +261,6 @@ void env_handle_gate(EnvState &env, bool gate)
                         1.0);
     }
 }
-#include <cstdio>
 
 void env_out(float *cv,  EnvState &env, unsigned smps)
 {
