@@ -6,20 +6,16 @@
 #include "draw.h"
 #include "view.h"
 #include "synth.h"
-
-void draw_undo(int x, int y)
-{
-    fl_color(255,255,255);
-    fl_draw("foobar 80:120", x+10,y+20);
-    fl_draw("bax      20:21", x+10,y+40);
-}
+#include "UndoWidget.h"
 
 class FooClass:public Fl_Group
 {
 public:
     FooClass(int x, int y, Synth &synth)
-        :Fl_Group(x,y,750,430),vs(synth),state(1)
+        :Fl_Group(x,y,750,430),vs(synth),
+        uw(552,52,198,498),state(1)
     {
+        uw.init(*getHistory());
         vs.add(new ControlView(0,300));
         vs.add(new MixerView(0,300));
         vs.add(new OscView(0,300,true));
@@ -40,6 +36,7 @@ public:
         fl_line(550,0,550,600);
 
         draw_children();
+
         if(state == 3)
             draw_overlay(0,300);
         if(state == 4) {
@@ -54,8 +51,6 @@ public:
         fl_color(255,255,255);
         fl_draw("UNDO", 577,30);
         fl_draw("MIDI", 682,30);
-        draw_undo(550,50);
-
     }
 
     int handle(int ev) override
@@ -75,23 +70,25 @@ public:
     }
 
     ViewSet vs;
+    UndoWidget uw;
     int state;
 };
 
 int main()
 {
     Synth synth;
+    setup_jack();
     Fl_Window *w  = new Fl_Double_Window(750,430, "Schemo");
     auto foo = new FooClass(0,0, synth);
     (void) foo;
     w->show();
-    setup_jack();
     while(w->visible()) {
         Fl::wait(0.1);
         handleUpdates([foo](const char *addr, std::string s, float f)
                 {
                 foo->vs.propigate(addr, s, f);
-                });
+                },
+                [foo](){foo->uw.totalRefresh();});
         
     }
     printf("Done...\n");

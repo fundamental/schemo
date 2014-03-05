@@ -7,15 +7,26 @@
 #include <rtosc/ports.h>
 #include <rtosc/port-sugar.h>
 #include <rtosc/thread-link.h>
+#include <rtosc/undo-history.h>
+//#include <rtosc/miditable.h>
 
 
 using rtosc::Ports;
-#define rUnit(x) rMap(unit, x)
+
+/*****************
+ * RTOSC Globals *
+ *****************/
+rtosc::ThreadLink bToU(1024,20);
+rtosc::ThreadLink uToB(1024,20);
+rtosc::UndoHistory undo;
+//rtosc::MidiMapperRT midi_rt;
+//rtosc::MidiMappernRT midi_nrt;
 
 
 /**************
  * Parameters *
  **************/
+#define rUnit(x) rMap(unit, x)
 
 
 struct EnvPars {
@@ -161,6 +172,12 @@ Ports Synth_::ports = {
     rRecur(osc2p, "Second Oscillator"),
     rRecur(envp,  "Envelope"),
     rRecur(mix,   "Mixture"),
+    {"undo_pause", 0, 0, [](const char *, rtosc::RtData &d)
+        {d.reply("/undo_pause","");}},
+    {"undo_resume", 0, 0, [](const char *, rtosc::RtData &d)
+        {d.reply("/undo_resume","");}},
+    //midi_nrt.addWatchPort();
+    //midi_nrt.removeWatchPort();
 };
 
 
@@ -414,12 +431,10 @@ void noteOff(Synth_ &synth, char note)
     }
 
 }
-/*****************
- * Communication *
- *****************/
+/***************************
+ * Communication And RTOSC *
+ ***************************/
 
-rtosc::ThreadLink bToU(1024,20);
-rtosc::ThreadLink uToB(1024,20);
 
 class DispatchData:public rtosc::RtData
 {
@@ -515,11 +530,13 @@ void writeNormFloat(const char *addr, float f)
     char type = portType(p->name);
     if(type == 'T') {
         uToB.write(addr, f>0.5?"T":"F");
+        //midi_nrt.snoop(uToB.buffer());
     } else if(type == 'f') {
         //always assume linear map [FIXME]
         float min_ = atof(p->meta()["min"]);
         float max_ = atof(p->meta()["max"]);
         uToB.write(addr,"f", min_+(max_-min_)*f);
+        //midi_nrt.snoop(uToB.buffer());
     }
 }
 
@@ -541,18 +558,34 @@ std::string formatter(std::string unit, float val)
     
 }
 
-void handleUpdates(std::function<void(const char *addr, std::string, float)> cb)
+bool recording_undo = true;
+void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
+                   std::function<void()> damage_undo)
 {
     using rtosc::msg_t;
     using rtosc::Port;
     while(bToU.hasNext()) {
         //assume all messages are UI only FIXME
         msg_t msg = bToU.read();
-        printf("return address '%s'\n", msg);
-        if(!strcmp("undo_change", msg) || !strcmp("/broadcast", msg))
+        printf("return address pre '%s'\n", msg);
+        if(!strcmp("/undo_pause", msg)) {
+            recording_undo = false;
+            continue;
+        } else if(!strcmp("/undo_resume", msg)) {
+            recording_undo = true;
+            continue;
+        } else if(!strcmp("undo_change", msg)) {
+            if(recording_undo) {
+                undo.recordEvent(msg);
+                damage_undo();
+            }
+            continue;
+        //} else if(!strcmp("/midi-use-CC", msg)) {
+        //    midi_nrt.addMapping(rtosc_argument(msg, 0).i);
+        } else if(!strcmp("/broadcast", msg))
             continue;
         const Port *p = getPort(Synth_::ports, msg);
-        printf("return address '%s'\n", msg);
+        printf("return address post '%s'\n", msg);
         assert(p);
         char type = portType(p->name);
         if(type == 'T') {
@@ -568,6 +601,11 @@ void handleUpdates(std::function<void(const char *addr, std::string, float)> cb)
             cb(msg, formatter(p->meta()["unit"],v), (v-min_)/(max_-min_));
         }
     }
+}
+
+rtosc::UndoHistory *getHistory(void)
+{
+    return &undo;
 }
 
 void renderWave(float *out, unsigned nsmps, float a, float b, float c)
@@ -614,6 +652,9 @@ int process_cb(unsigned nframes, void *)
             noteOn(synth, in_event.buffer[1]);
         else if((*in_event.buffer & 0xf0) == 0x80) 
             noteOff(synth, in_event.buffer[1]);
+        //else if((*in_event.buffer & 0xb0) == 0x80)
+        //    midi_rt.handleCC(in_event.buffer[1], in_event.buffer[2]);
+
 	}
 
     handleEvents();
@@ -651,6 +692,17 @@ void setup_jack(void)
 		fprintf(stderr, "Could not activate jack connection...\n");
         exit(1);
     }
+
+    //Rtosc setup
+    undo.setCallback([](const char *msg){
+            uToB.write("/undo_pause","");
+            //midi_nrt.snoop(msg);
+            uToB.raw_write(msg);
+            uToB.write("/undo_resume","");});
+
+    //midi_rt.frontend = [](const char *msg){bToU.raw_write(msg);};
+    //midi_rt.backend  = [](const char *msg){DispatchData d;Synth_::ports.dispatch(msg+1, d);};
+    //midi_nrt.base_ports = &Synth_::ports;
     
     //Setup parameters
     synth.osc1.pars.detune = -12;

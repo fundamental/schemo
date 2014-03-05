@@ -64,7 +64,7 @@ public:
     const char *name;
 };
 
-class SliderVpack:virtual Widget, public Fl_Group
+class SliderVpack:virtual public Widget, public Fl_Group
 {
 public:
     SliderVpack(int x, int y, int n)
@@ -187,11 +187,11 @@ public:
     float *smps;
 };
 
-class Input2D:public Fl_Widget
+class Input2D:public Widget
 {
 public:
     Input2D(int x, int y, int w, int h)
-        :Fl_Widget(x,y,w,h),cursorX(x+w/2),cursorY(y+h/2)
+        :Widget(x,y,w,h),cursorX(x+w/2),cursorY(y+h/2)
     {}
 
     int handle(int ev)

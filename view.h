@@ -1,11 +1,13 @@
 #pragma once
 #include <FL/Fl_Group.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_Menu_Item.H>
 #include "widgets.h"
 #include "draw.h"
 #include "synth.h"
 #include <vector>
 #include <map>
+#include <set>
 #include <cassert>
 
 using namespace std::placeholders;
@@ -31,15 +33,69 @@ public:
         }
     }
     void draw_overlay_labels(void);
-    const char *getAddress(int x, int y);
+    bool insideP(Fl_Widget &w, int x, int y)
+    {
+        return w.x() <= x && x <= w.x()+w.w() &&
+               w.y() <= y && y <= w.y()+w.h();
+    }
+
+    int do_menu(std::vector<int> options)
+    {
+        Fl_Menu_Item *rclick_menu = new Fl_Menu_Item[options.size()+1];
+        for(unsigned i=0; i<options.size(); ++i) {
+            rclick_menu[i] = Fl_Menu_Item{0};
+            rclick_menu[i].text = addr[options[i]].c_str();
+            rclick_menu[i].user_data_ = (void*)options[i];
+        }
+        rclick_menu[options.size()] = Fl_Menu_Item{0};
+
+        const Fl_Menu_Item *m = rclick_menu->popup(Fl::event_x(), Fl::event_y(), 0, 0, 0);
+        int res = -1;
+        if(m)
+            res =(int)m->user_data_ ;
+        delete[] rclick_menu;
+        return res;
+    }
+
+    int getAddress(void)
+    {
+        int x = Fl::event_x();
+        int y = Fl::event_y();
+        //Assume widgets never overlap
+        for(auto e:addresses) {
+            if(insideP(*e.first,x,y)) {
+                printf("Inside a widget...\n");
+                if(e.second.size() == 1)
+                    return e.second[0];
+                else
+                    return do_menu(e.second);
+            }
+        }
+        return -1;
+    }
+
+    bool contains(std::vector<int> a, int b)
+    {
+        for(auto aa:a)
+            if(aa==b)
+                return true;
+        return false;
+    }
+    void addMappedWidget(int address_ref, Widget *w, int widget_param_id)
+    {
+        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(
+                    addr[address_ref], std::pair<Widget*,int>((Widget*)w,widget_param_id)));
+        if(!contains(addresses[w], address_ref))
+            addresses[w].push_back(address_ref);
+    }
 
     Synth *synth;
 
     std::vector<std::string> addr;
-    std::multimap<Widget*,std::string> addresses;
+    std::map<Widget*,std::vector<int>> addresses;
     std::multimap<std::string, std::pair<Widget*,int>> widgets;
 
-    void propigate(const char *addr, std::string s, float f)
+    virtual void propigate(const char *addr, std::string s, float f)
     {
         auto range = widgets.equal_range(addr);
         for(auto itr = range.first; itr != range.second; ++itr)
@@ -54,6 +110,19 @@ public:
         printf("Trying to update param #%d(%s) to %f\n",
                 i, addr[i].c_str(), f);
         writeNormFloat(addr[i].c_str(), f);
+    }
+
+    int handle(int ev)
+    {
+        if(ev == FL_PUSH) {
+            int cur_addr = getAddress();
+            if(cur_addr != -1)
+                printf("Current widget: '%s'\n", addr[cur_addr].c_str());
+            else
+                printf("Could not find anything useful...\n");
+            return 1;
+        }
+        return 0;
     }
 };
 
@@ -164,8 +233,13 @@ public:
              << base + "level1"
              << base + "pan2"
              << base + "level2";
+
+        addMappedWidget(0,osc1,0);
+        addMappedWidget(1,osc1,1);
+        addMappedWidget(2,osc2,2);
+        addMappedWidget(3,osc2,3);
     }
-    
+
     void draw(void) override
     {
         fl_color(255,255,255);
@@ -191,6 +265,8 @@ public:
         :View(x,y), hasSync(sync)
     {
         plot = new Plot(x+20, y+20, 200, 100);
+        renderWave(plot->smps, plot->w()+1, 1.0, 0.0,0.0);
+
         pack = new SliderVpack(x+255,y+10,5);
         if(sync) {
             pack->add("Square Mix", "7.0%",        7);
@@ -208,17 +284,12 @@ public:
 
         end();
         init_parameters();
-        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[0],
-                    std::pair<Widget*,int>((Widget*)pack,0)));
-        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[1],
-                    std::pair<Widget*,int>((Widget*)pack,1)));
-        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[2],
-                    std::pair<Widget*,int>((Widget*)pack,2)));
-        widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[3],
-                    std::pair<Widget*,int>((Widget*)pack,3)));
+        addMappedWidget(0,pack,0);
+        addMappedWidget(1,pack,1);
+        addMappedWidget(2,pack,2);
+        addMappedWidget(3,pack,3);
         if(sync)
-            widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[4],
-                        std::pair<Widget*,int>((Widget*)pack,4)));
+            addMappedWidget(4,pack,4);
     }
     void init_parameters(void)
     {
@@ -232,6 +303,18 @@ public:
 
     }
 
+    virtual void propigate(const char *addr, std::string s, float f)
+    {
+        View::propigate(addr, s, f);
+        auto x = widgets.equal_range(addr);
+        if(x.first != x.second) {
+            renderWave(plot->smps, plot->w()+1,
+                    pack->sliders[2]->value/95.0,
+                    pack->sliders[1]->value/95.0,
+                    pack->sliders[0]->value/95.0);
+            plot->redraw();
+        }
+    }
     void changeCb(int i, float f)
     {
         View::changeCb(i,f);
@@ -240,7 +323,6 @@ public:
                 pack->sliders[1]->value/95.0,
                 pack->sliders[0]->value/95.0);
         plot->redraw();
-
     }
 
     Plot *plot;
@@ -264,10 +346,9 @@ public:
         end();
         init_parameters();
         for(int i=0; i<5; ++i)
-            widgets.insert(std::pair<std::string,std::pair<Widget*,int>>(addr[i],
-                        std::pair<Widget*,int>((Widget*)pack,i)));
+            addMappedWidget(i,pack,i);
     }
-    
+
     void draw(void) override
     {
         draw::env(20, 300);

@@ -23,11 +23,15 @@ class Synth
     Parameter operator[](const char *) {return Parameter();}
 };
 
+namespace rtosc{class UndoHistory;};
 
 void setup_jack(void);
 void writeNormFloat(const char *addr, float f);
-void handleUpdates(std::function<void(const char *,std::string, float)> cb);
+void handleUpdates(std::function<void(const char *,std::string, float)> cb,
+                   std::function<void()> damage_undo);
+rtosc::UndoHistory *getHistory(void);
 
 void renderWave(float *smps, unsigned nsmps, float a, float b, float c);
+
 
 
