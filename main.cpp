@@ -110,7 +110,7 @@ int main()
     auto foo = new FooClass(0,0, synth);
     (void) foo;
     w->show();
-    while(w->shown()) {
+    while(!NTK || w->shown()) {
         Fl::wait(0.01);
         handleUpdates([foo](const char *addr, std::string s, float f)
                 {
