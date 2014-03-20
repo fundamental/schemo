@@ -2,17 +2,27 @@
 #include <FL/Fl_Group.H>
 #include <FL/fl_draw.H>
 #include <FL/Fl_Menu_Item.H>
+#include <rtosc/miditable.h>
 #include "widgets.h"
 #include "draw.h"
 #include "synth.h"
 #include <vector>
 #include <map>
 #include <set>
+#include <sstream>
 #include <cassert>
 
 using namespace std::placeholders;
 
 typedef std::vector<std::tuple<std::string, int, int>> ParameterSet;
+
+template<class T>
+std::string to_s(T x)
+{
+    std::stringstream ss;
+    ss << x;
+    return ss.str();
+}
 
 //Collection of fixed sized views
 //550x130
@@ -64,7 +74,12 @@ public:
         //Assume widgets never overlap
         for(auto e:addresses) {
             if(insideP(*e.first,x,y)) {
-                printf("Inside a widget...\n");
+                //printf("Inside a widget...\n");
+
+                if(auto *vp = dynamic_cast<SliderVpack*>(e.first))
+                     return vp->getAddressID(x,y);
+
+
                 if(e.second.size() == 1)
                     return e.second[0];
                 else
@@ -72,6 +87,46 @@ public:
             }
         }
         return -1;
+    }
+
+    void draw_overlay_cc(std::map<std::string,std::string> midi_map)
+    {
+        //printf("Drawing overlay...\n");
+        for(auto known_addr : midi_map) {
+            //printf("working with '%s'\n", known_addr.first.c_str());
+            auto t = widgets.equal_range(known_addr.first);
+            auto str   = known_addr.second;
+            auto begin = t.first;
+            auto end   = t.second;
+            for(auto itr=begin; itr!=end; ++itr) {
+                auto pos = itr->second.first->getOverlayPos(itr->second.second);
+                draw::capped_label(pos.first, pos.second, 27,14, str.c_str());
+            }
+        }
+    //std::multimap<std::string, std::pair<Widget*,int>> widgets;
+    };
+
+    //std::map<std::string,std::string> getMidiMap(void)
+    //{
+    //    return std::map<std::string,std::string>();
+    //};
+
+
+    void draw(void) override
+    {
+        draw_children();
+        if(overlayMode == 1) {
+            draw_overlay_cc(getMidiMap());
+        } if(overlayMode == 2) {
+            draw_overlay_highlights();
+            draw_overlay_cc(getMidiMap());
+        }
+    }
+
+    void setOverlayMode(int level)
+    {
+        overlayMode = level;
+        redraw();
     }
 
     bool contains(std::vector<int> a, int b)
@@ -89,8 +144,10 @@ public:
             addresses[w].push_back(address_ref);
     }
 
+    int  overlayMode = 0;
     Synth *synth;
 
+    std::function<void(std::string)> editParam;
     std::vector<std::string> addr;
     std::map<Widget*,std::vector<int>> addresses;
     std::multimap<std::string, std::pair<Widget*,int>> widgets;
@@ -107,22 +164,32 @@ public:
     }
     virtual void changeCb(int i, float f)
     {
-        printf("Trying to update param #%d(%s) to %f\n",
-                i, addr[i].c_str(), f);
+        //printf("Trying to update param #%d(%s) to %f\n",
+        //        i, addr[i].c_str(), f);
         writeNormFloat(addr[i].c_str(), f);
     }
 
     int handle(int ev)
     {
-        if(ev == FL_PUSH) {
+        if(ev == FL_PUSH && Fl::event_button3()) {
             int cur_addr = getAddress();
-            if(cur_addr != -1)
+            if(cur_addr != -1) {
                 printf("Current widget: '%s'\n", addr[cur_addr].c_str());
-            else
+                tryMap(addr[cur_addr]);
+                redraw();
+            } else
+                printf("Could not find anything useful...\n");
+            return 1;
+        } else if(ev == FL_PUSH && Fl::event_button2()) {
+            int cur_addr = getAddress();
+            if(cur_addr != -1) {
+                printf("Current widget: '%s'\n", addr[cur_addr].c_str());
+                editParam(addr[cur_addr]);
+            } else
                 printf("Could not find anything useful...\n");
             return 1;
         }
-        return 0;
+        return Fl_Group::handle(ev);
     }
 };
 
@@ -141,13 +208,7 @@ public:
     {}
     Synth &synth;
 
-    void add(View *view)
-    {
-        assert(view);
-        view->hide();
-        view->synth = &synth;
-        views.push_back(view);
-    }
+    void add(View *view);
 
     void select(int idx)
     {
@@ -164,10 +225,26 @@ public:
         assert(0);
     }
 
+    std::string getAddress(void)
+    {
+        return "";
+    };
+
     void propigate(const char *addr, std::string s, float f)
     {
         for(auto view:views)
             view->propigate(addr, s, f);
+    }
+
+    void setOverlayMode(int level)
+    {
+        for(auto view:views)
+            view->setOverlayMode(level);
+    }
+
+    void redraw(void)
+    {
+        active().redraw();
     }
     std::vector<View*> views;
 };
@@ -178,39 +255,148 @@ public:
     ControlView(int x, int y)
         :View(x,y)
     {
-        auto pack = new SliderVpack(x+60,y+40,3);
-        pack->add("Minimum", "7.0%", 7);
-        pack->add("Maximum", "30.0%", 30);
-        pack->add("Scale",   "Linear", 95);
-        new TinyButton(x+405, y+47, "L");
-        new TinyButton(x+425, y+47, "D");
-        new TinyButton(x+405, y+67, "L");
-        new TinyButton(x+425, y+67, "D");
+        using std::get;
+        pack = new SliderVpack(x+60,y+40,3);
+        pack->add("Minimum", "0.0%", 0);
+        pack->add("Maximum", "100.0%", 95);
+        pack->add("Scale",   "Linear", 0);
+        auto *b1 = new TinyButton(x+405, y+47, "L");
+        auto *b2 = new TinyButton(x+425, y+47, "D");
+        auto *b3 = new TinyButton(x+405, y+67, "L");
+        auto *b4 = new TinyButton(x+425, y+67, "D");
         //draw_middings(x()+350,y()+40);
+
+        pack->sliders[0]->callback([](Fl_Widget*w,void*v) {
+                ControlView *ctl = (ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                Slider *s = (Slider*)w;
+                Slider *s2 = ctl->pack->sliders[1];
+                if(s->value >= 95)
+                    s->value = 94;
+                if(s->value >= s2->value)
+                    s->value = s2->value-1;
+                float val = s->value/95.0;
+                ctl->pack->val[0] = to_s(100*val)+"%";
+                ctl->pack->redraw();
+                auto bounds = midi.getBounds(ctl->addr.c_str());
+                float rmin = get<0>(bounds);
+                float rmax = get<1>(bounds);
+                midi.setBounds(ctl->addr.c_str(),
+                    (rmax-rmin)*val+rmin,
+                    get<3>(bounds));
+                },this);
+        pack->sliders[1]->callback([](Fl_Widget*w,void*v) {
+                ControlView *ctl = (ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                Slider *s = (Slider*)w;
+                Slider *s2 = ctl->pack->sliders[0];
+                if(s->value <= 0)
+                    s->value = 1;
+                if(s->value <= s2->value)
+                    s->value = s2->value+1;
+                float val = s->value/95.0;
+                ctl->pack->val[1] = to_s(100*val)+"%";
+                ctl->pack->redraw();
+                auto bounds = midi.getBounds(ctl->addr.c_str());
+                float rmin = get<0>(bounds);
+                float rmax = get<1>(bounds);
+                midi.setBounds(ctl->addr.c_str(),
+                    get<2>(bounds),
+                    (rmax-rmin)*val+rmin);
+                },this);
+        pack->sliders[2]->callback([](Fl_Widget *w,void *v) {
+                ControlView *ctl = (ControlView*)v;
+                Slider *s = (Slider*)w;
+                if(s->value > 50) {
+                    s->value = 95;
+                    ctl->pack->val[2] = "Log";
+                } else {
+                    s->value = 0;
+                    ctl->pack->val[2] = "Linear";
+                    }},this);
+        //pack->sliders[0]->deactivate();
+        //pack->sliders[1]->deactivate();
+        pack->sliders[2]->deactivate();
+
+        b1->callback([](Fl_Widget*,void*v) {
+                ControlView          &ctl  = *(ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                midi.map(ctl.addr.c_str(), true);
+                ctl.redraw();
+                puts("Learn coarse");
+                }, this);
+        b2->callback([](Fl_Widget*,void*v) {
+                ControlView          &ctl  = *(ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                midi.unMap(ctl.addr.c_str(), true);
+                ctl.redraw();
+                puts("unLearn coarse");}, this);
+        b3->callback([](Fl_Widget*,void*v) {
+                ControlView          &ctl  = *(ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                midi.map(ctl.addr.c_str(), false);
+                ctl.redraw();
+                puts("Learn fine");}, this);
+        b4->callback([](Fl_Widget*,void*v) {
+                ControlView          &ctl  = *(ControlView*)v;
+                rtosc::MidiMappernRT &midi = *getMidiMapper();
+                midi.unMap(ctl.addr.c_str(), false);
+                ctl.redraw();
+                puts("unLearn fine");}, this);
         end();
     }
 
-    static void draw_middings(int x, int y)
+    void draw_middings(int x, int y)
     {
         fl_color(255,255,255);
         fl_draw("Coarse", x,    y+20);
         fl_draw("Fine",   x,    y+40);
-        fl_draw("CC42",   x+100, y+20);
-        fl_draw("(none)", x+100, y+40);
+        fl_draw(coarse_CC.c_str(),   x+100, y+20);
+        fl_draw(fine_CC.c_str(), x+100, y+40);
     }
 
     void draw(void) override
     {
+        auto &m = *getMidiMapper();
+        if(m.hasFine(addr))
+            fine_CC = "CC"+to_s(m.getFine(addr));
+        else if(m.hasFinePending(addr))
+            fine_CC = "Pending";
+        else
+            fine_CC = "(none)";
+
+        if(m.hasCoarse(addr))
+            coarse_CC = "CC"+to_s(m.getCoarse(addr));
+        else if(m.hasCoarsePending(addr))
+            coarse_CC = "Pending";
+        else
+            coarse_CC = "(none)";
+
         fl_color(255,255,255);
-        fl_draw("/osc1/sqr_mag - Oscillator square magnitude", x()+20,y()+20);
-        int w,h;
-        fl_measure("/osc1/sqr_mag - ",w,h,1);
-        fl_draw("'f' in [0,1]",x()+20+w,y()+40);
+        fl_draw(addr.c_str(), x()+20,y()+20);
+        //int w,h;
+        //fl_measure(addr.c_str(),w,h,1);
+        //fl_draw("'f' in [0,1]",x()+20+w,y()+40);
 
         draw_middings(x()+350,y()+40);
-        draw_children();
+        View::draw();
     }
 
+    void setAddr(std::string str)
+    {
+        addr = str;
+        redraw();
+    }
+
+    int handle(int ev)
+    {
+        return Fl_Group::handle(ev);
+    }
+
+    SliderVpack *pack;
+    std::string addr;
+    std::string coarse_CC;
+    std::string fine_CC;
 };
 
 class MixerView:public View
@@ -242,10 +428,11 @@ public:
 
     void draw(void) override
     {
+        fl_font(4,14);
         fl_color(255,255,255);
         fl_draw("OSC 1", x()+10, y()+70);
         fl_draw("OSC 2", x()+280, y()+70);
-        draw_children();
+        View::draw();
     }
 
     static void _cb(Fl_Widget *w, void *v)
@@ -352,7 +539,7 @@ public:
     void draw(void) override
     {
         draw::env(20, 300);
-        draw_children();
+        View::draw();
     }
 
     void init_parameters(void)
@@ -365,3 +552,19 @@ public:
              << base + "rtime";
     }
 };
+
+void ViewSet::add(View *view)
+{
+    assert(view);
+    view->hide();
+    view->synth = &synth;
+    if(views.size() != 0)
+        view->editParam = [this](std::string addr)
+        {
+            auto *ctl = (ControlView*)views[0];
+            ctl->setAddr(addr);
+            select(0);
+
+        };
+    views.push_back(view);
+}

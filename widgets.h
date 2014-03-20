@@ -1,6 +1,7 @@
 #pragma once
 #include <FL/Fl.H>
 #include <FL/Fl_Widget.H>
+#include <FL/Fl_Box.H>
 #include <FL/Fl_Group.H>
 #include <FL/fl_draw.H>
 #include "draw.h"
@@ -24,6 +25,7 @@ enum ValueType
     VALUE_STRING,     //some arbitrary string
 };
 
+
 class Widget:public Fl_Widget
 {
 public:
@@ -33,6 +35,10 @@ public:
 
     virtual void updateParam(int, float){}
     virtual void updateLabel(int, std::string){};
+
+    //XXX perhaps change to a draw overlay method that uses this method as a
+    //guide or something
+    virtual std::pair<int,int> getOverlayPos(int i) const = 0;
 };
 
 class Slider:public Widget
@@ -42,7 +48,7 @@ public:
         :Widget(x,y,100,19), value(0), name(0)
     {}
     void draw(void) override {
-        draw::slider(x(),y(),value);
+        draw::slider(x(),y(),value, active());
     }
     int handle(int ev) {
         if(ev == FL_PUSH || ev == FL_DRAG) {
@@ -60,6 +66,11 @@ public:
         value=f*95;
     }
 
+    std::pair<int,int> getOverlayPos(int) const override
+    {
+        return std::make_pair(x()+w()-30, y());
+    }
+
     int value;
     const char *name;
 };
@@ -70,6 +81,11 @@ public:
     SliderVpack(int x, int y, int n)
         :Widget(x,y,280,n*20+10),Fl_Group(x,y,280,n*20+10),  offset(0)
     {end();}
+
+    void redraw()
+    {
+        Fl_Group::redraw();
+    }
 
     void draw_overlay_highlights(void)
     {
@@ -95,7 +111,7 @@ public:
     }
     std::vector<bool> bool_spec;
     std::vector<Slider *>     sliders;
-    std::vector<const char *> label, val;
+    std::vector<std::string> label, val;
     std::vector<int>          value;
 
     void add(const char *address)
@@ -109,8 +125,8 @@ public:
         fl_color(255,255,255);
         fl_font(FL_COURIER,14);
         for(int i=0; i<(int)label.size(); ++i) {
-            fl_draw(label[i], Fl_Group::x(),     Fl_Group::y()+(1+i)*20);
-            fl_draw(val[i],   Fl_Group::x()+185, Fl_Group::y()+(1+i)*20);
+            fl_draw(label[i].c_str(), Fl_Group::x(),     Fl_Group::y()+(1+i)*20);
+            fl_draw(val[i].c_str(),   Fl_Group::x()+185, Fl_Group::y()+(1+i)*20);
         }
 
         draw_children();
@@ -121,7 +137,7 @@ public:
         offset = off;
         callback = foo;
     }
-    
+
     void updateParam(int i, float f)
     {
         if(i > (int)sliders.size()) {
@@ -133,7 +149,7 @@ public:
 
     void updateLabel(int i, std::string str)
     {
-        printf("trying to update label '%d' to '%s'\n", i, str.c_str());
+        //printf("trying to update label '%d' to '%s'\n", i, str.c_str());
         if(i > (int)val.size()) {
             printf("Bad parameter index\n");
             return;
@@ -164,8 +180,30 @@ public:
 
     static void _cb(Fl_Widget *w, void *v)
     {
-        SliderVpack &svp = *(SliderVpack*)v; 
+        SliderVpack &svp = *(SliderVpack*)v;
         svp.handleWidget(w);
+    }
+
+    bool insideP(Fl_Widget &w, int x, int y)
+    {
+        return w.x() <= x && x <= w.x()+w.w() &&
+               w.y() <= y && y <= w.y()+w.h();
+    }
+
+    int getAddressID(int x, int y)
+    {
+        int i=0;
+        for(auto s:sliders) {
+            if(insideP(*s,x,y))
+                return i+offset;
+            i++;
+        }
+        return -1;
+    }
+
+    std::pair<int,int> getOverlayPos(int i) const override
+    {
+        return sliders[limit<int>(i,0,sliders.size()-1)]->getOverlayPos(0);
     }
 };
 
@@ -228,7 +266,17 @@ public:
             cursorX = f*w();
         else
             cursorY = f*h();
+        redraw();
     }
+
+    std::pair<int,int> getOverlayPos(int i) const override
+    {
+        if(i==0)
+            return std::make_pair(x()+w()-30, y());
+        else
+            return std::make_pair(x()+w()-30, y()+h()-30);
+    }
+
 
     int cursorX;
     int cursorY;
@@ -246,6 +294,7 @@ public:
     {
         if(ev==FL_PUSH) {
             pushed_state = true;
+            do_callback();
             redraw();
             return 1;
         }
@@ -268,4 +317,61 @@ public:
         fl_draw(label(),x()+2,y()+12);
     }
     bool pushed_state;
+};
+
+class ToggleButton:public Fl_Box
+{
+public:
+    ToggleButton(int x, int y, int w, int h, const char *label)
+        :Fl_Box(x,y,w,h,label),pushed_state(false)
+    {
+        box(FL_NO_BOX);
+    }
+
+    int handle(int ev) override
+    {
+        if(ev==FL_PUSH) {
+            pushed_state = !pushed_state;
+            do_callback();
+            redraw();
+            return 1;
+        }
+        return 0;
+    }
+
+    void draw(void) override
+    {
+        //XXX come up with better colors here
+        if(pushed_state)
+            fl_color(80,80,80);
+        else
+            fl_color(0,0,0);
+        fl_rectf(x(),y(),w(),h());
+        fl_color(255,255,255);
+        labelcolor(fl_color());
+
+        Fl_Box::draw();
+    }
+
+    bool pushed_state;
+};
+
+class InvisibleButton:public Fl_Widget
+{
+    public:
+        InvisibleButton(int x, int y, int w, int h)
+            :Fl_Widget(x,y,w,h)
+        {}
+
+        int handle(int ev)
+        {
+            if(ev==FL_PUSH) {
+                do_callback();
+                return 1;
+            }
+            return 0;
+        }
+
+        void draw(void)
+        {}
 };

@@ -37,8 +37,8 @@ class UndoWidget:public Fl_Browser
                         rtosc_argument(info, 0).s,
                         args);
                 if(!strcmp(args, "sff"))
-                    snprintf(buf, 1023, "%s\t%f\t%f",
-                        rtosc_argument(info, 0).s,
+                    snprintf(buf, 1023, "%s\t%.2f\t%.2f",
+                        rindex(rtosc_argument(info, 0).s,'/'),
                         rtosc_argument(info, 1).f,
                         rtosc_argument(info, 2).f);
 
@@ -54,7 +54,7 @@ class UndoWidget:public Fl_Browser
             select_only(selection());
 
             if(choice != hist->getPos()) {
-                printf("seek(%d)\n",choice-hist->getPos()); 
+                //printf("seek(%d)\n",choice-hist->getPos());
                 hist->seekHistory(choice-hist->getPos());
             }
             return val;

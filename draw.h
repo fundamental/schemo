@@ -12,7 +12,7 @@ void capped_label(int x, int y, int w, int h,
 void sigma(int x, int y);
 
 //Widget Specific (3)
-void slider(int x,int y, int w);
+void slider(int x,int y, int w, int active);
 
 void sinplot(int x, int y, int w, int h);
 void sinplot2(int x, int y, int w, int h);

@@ -8,7 +8,7 @@
 #include <rtosc/port-sugar.h>
 #include <rtosc/thread-link.h>
 #include <rtosc/undo-history.h>
-//#include <rtosc/miditable.h>
+#include <rtosc/miditable.h>
 
 
 using rtosc::Ports;
@@ -19,8 +19,8 @@ using rtosc::Ports;
 rtosc::ThreadLink bToU(1024,20);
 rtosc::ThreadLink uToB(1024,20);
 rtosc::UndoHistory undo;
-//rtosc::MidiMapperRT midi_rt;
-//rtosc::MidiMappernRT midi_nrt;
+rtosc::MidiMapperRT midi_rt;
+rtosc::MidiMappernRT midi_nrt;
 
 
 /**************
@@ -151,7 +151,7 @@ struct OscilState {
     OscilPars &pars;
 };
 
-struct Synth_ 
+struct Synth_
 {
     Synth_(void)
         :osc1(osc1p), osc2(osc2p), env(envp)
@@ -166,6 +166,8 @@ struct Synth_
     MixPars    mix;
     static Ports ports;
 };
+
+void send_cc(int cc, int val);
 #define rObject Synth_
 Ports Synth_::ports = {
     rRecur(osc1p, "First Oscillator"),
@@ -176,8 +178,17 @@ Ports Synth_::ports = {
         {d.reply("/undo_pause","");}},
     {"undo_resume", 0, 0, [](const char *, rtosc::RtData &d)
         {d.reply("/undo_resume","");}},
-    //midi_nrt.addWatchPort();
-    //midi_nrt.removeWatchPort();
+    midi_rt.addWatchPort(),
+    midi_rt.removeWatchPort(),
+    midi_rt.bindPort(),
+    {"virtual_midi_cc:ii", 0, 0, [](const char *msg, rtosc::RtData &d)
+        {
+            int val = rtosc_argument(msg, 0).i;
+            int cc = rtosc_argument(msg, 1).i;
+            send_cc(cc,val);
+            midi_rt.handleCC(cc,val);
+        }},
+
 };
 
 
@@ -372,7 +383,7 @@ void run_osc(float *out, const float *sync, OscilState &osc,
                 osc.phase = 0;
             osc.phase_minus = sync[i] < 0;
 
-            
+
             out[i] = 0;
             out[i] += mix_sin*interpolate(sin_table[table], OSCIL_SIZE, osc.phase);
             out[i] += mix_saw*interpolate(saw_table[table], OSCIL_SIZE, osc.phase);
@@ -530,13 +541,13 @@ void writeNormFloat(const char *addr, float f)
     char type = portType(p->name);
     if(type == 'T') {
         uToB.write(addr, f>0.5?"T":"F");
-        //midi_nrt.snoop(uToB.buffer());
+        midi_nrt.snoop(uToB.buffer());
     } else if(type == 'f') {
         //always assume linear map [FIXME]
         float min_ = atof(p->meta()["min"]);
         float max_ = atof(p->meta()["max"]);
         uToB.write(addr,"f", min_+(max_-min_)*f);
-        //midi_nrt.snoop(uToB.buffer());
+        midi_nrt.snoop(uToB.buffer());
     }
 }
 
@@ -555,19 +566,22 @@ std::string formatter(std::string unit, float val)
         snprintf(buffer, 1023, "(NULL)");
 
     return buffer;
-    
+
 }
 
 bool recording_undo = true;
 void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
-                   std::function<void()> damage_undo)
+                   std::function<void()> damage_undo,
+                   std::function<void()> damage_midi)
 {
     using rtosc::msg_t;
     using rtosc::Port;
     while(bToU.hasNext()) {
         //assume all messages are UI only FIXME
         msg_t msg = bToU.read();
-        printf("return address pre '%s'\n", msg);
+        //printf("return address pre '%s'\n", msg);
+        //if(!strcmp("f",rtosc_argument_string(msg)))
+        //    printf("    val<%f>\n", rtosc_argument(msg,0).f);
         if(!strcmp("/undo_pause", msg)) {
             recording_undo = false;
             continue;
@@ -580,12 +594,15 @@ void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
                 damage_undo();
             }
             continue;
-        //} else if(!strcmp("/midi-use-CC", msg)) {
-        //    midi_nrt.addMapping(rtosc_argument(msg, 0).i);
+        } else if(!strcmp("/midi-use-CC", msg)) {
+            printf("Using an id and forming a connection\n");
+            midi_nrt.useFreeID(rtosc_argument(msg, 0).i);
+            damage_midi();
+            continue;
         } else if(!strcmp("/broadcast", msg))
             continue;
         const Port *p = getPort(Synth_::ports, msg);
-        printf("return address post '%s'\n", msg);
+        //printf("return address post '%s'\n", msg);
         assert(p);
         char type = portType(p->name);
         if(type == 'T') {
@@ -606,6 +623,26 @@ void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
 rtosc::UndoHistory *getHistory(void)
 {
     return &undo;
+}
+
+std::map<std::string,std::string> getMidiMap(void)
+{
+    //printf("Midi map size = '%d'\n", midi_nrt.getMidiMappingStrings().size());
+    return midi_nrt.getMidiMappingStrings();
+}
+
+void tryMap(std::string str)
+{
+    auto map = midi_nrt.getMidiMappingStrings();
+    if(map.find(str) != map.end())
+        midi_nrt.map(str.c_str(), false);
+    else
+        midi_nrt.map(str.c_str(), true);
+}
+
+rtosc::MidiMappernRT *getMidiMapper(void)
+{
+    return &midi_nrt;
 }
 
 void renderWave(float *out, unsigned nsmps, float a, float b, float c)
@@ -637,24 +674,38 @@ void renderWave(float *out, unsigned nsmps, float a, float b, float c)
 
 jack_client_t *client;
 jack_port_t *input_port;
+jack_port_t *midi_out;
+void *midi_port_buf;
 jack_port_t *output_port_l;
 jack_port_t *output_port_r;
+void send_cc(int cc, int val)
+{
+    //printf("cc sending (%d,%d)...\n\n\n", cc, val);
+    unsigned char* buffer = jack_midi_event_reserve(midi_port_buf, 0, 3);
+    if(buffer) {
+        buffer[0] = 0xb0;
+        buffer[1] = cc;
+        buffer[2] = val;
+    }
+}
+
 int process_cb(unsigned nframes, void *)
 {
 	void* port_buf = jack_port_get_buffer(input_port, nframes);
 	jack_midi_event_t in_event;
 	unsigned event_count = jack_midi_get_event_count(port_buf);
+	midi_port_buf = jack_port_get_buffer(midi_out, nframes);
+    jack_midi_clear_buffer(midi_port_buf);
     //Just deal with the jitter, this is a demo app...
 	jack_midi_event_get(&in_event, port_buf, 0);
 	for(unsigned i=0; i<event_count; i++) {
         jack_midi_event_get(&in_event, port_buf, i);
-        if((*in_event.buffer&0xf0) == 0x90)
+        if((in_event.buffer[0]&0xf0) == 0x90)
             noteOn(synth, in_event.buffer[1]);
-        else if((*in_event.buffer & 0xf0) == 0x80) 
+        else if((in_event.buffer[0] & 0xf0) == 0x80)
             noteOff(synth, in_event.buffer[1]);
-        //else if((*in_event.buffer & 0xb0) == 0x80)
-        //    midi_rt.handleCC(in_event.buffer[1], in_event.buffer[2]);
-
+        else if((in_event.buffer[0] & 0xf0) == 0xb0)
+            midi_rt.handleCC(in_event.buffer[1], in_event.buffer[2]);
 	}
 
     handleEvents();
@@ -679,8 +730,10 @@ void setup_jack(void)
 	jack_set_process_callback(client, process_cb, 0);
     sampleRate = jack_get_sample_rate(client);
 	jack_on_shutdown(client, die, 0);
-	input_port = jack_port_register(client, "midi", JACK_DEFAULT_MIDI_TYPE,
+	input_port = jack_port_register(client, "midi_in", JACK_DEFAULT_MIDI_TYPE,
             JackPortIsInput, 0);
+	midi_out  = jack_port_register(client, "midi_out", JACK_DEFAULT_MIDI_TYPE,
+            JackPortIsOutput, 0);
 	output_port_l
         = jack_port_register(client, "outl", JACK_DEFAULT_AUDIO_TYPE,
                 JackPortIsOutput, 0);
@@ -696,14 +749,18 @@ void setup_jack(void)
     //Rtosc setup
     undo.setCallback([](const char *msg){
             uToB.write("/undo_pause","");
-            //midi_nrt.snoop(msg);
+            midi_nrt.snoop(msg);
             uToB.raw_write(msg);
             uToB.write("/undo_resume","");});
 
-    //midi_rt.frontend = [](const char *msg){bToU.raw_write(msg);};
-    //midi_rt.backend  = [](const char *msg){DispatchData d;Synth_::ports.dispatch(msg+1, d);};
-    //midi_nrt.base_ports = &Synth_::ports;
-    
+    midi_rt.frontend = [](const char *msg){bToU.raw_write(msg);};
+    midi_rt.backend  = [](const char *msg){
+        DispatchData d;
+        Synth_::ports.dispatch(msg+1, d);};
+    midi_nrt.base_ports = &Synth_::ports;
+    midi_nrt.rt_cb      = [](const char *msg){uToB.raw_write(msg);};
+
+
     //Setup parameters
     synth.osc1.pars.detune = -12;
     synth.osc2.pars.sync   = false;

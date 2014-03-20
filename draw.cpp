@@ -53,7 +53,10 @@ void capped(int x, int y, int w, int h)
 void capped_label(int x, int y, int w, int h,
                        const char *label)
 {
-    capped(x, y, w,h);
+    int h_;
+    int w_;
+    fl_measure(label, w_, h_);
+    capped(x, y, w_+10, h);
     fl_color(255,255,255);
     fl_font(14,12);
     fl_draw(label, x+5, y+11);
@@ -85,14 +88,17 @@ void sigma(int x, int y)
 template<class T>
 T min(T a, T b) { return a<b?a:b; }
 
-void slider(int x,int y, int w)
+void slider(int x,int y, int w, int active)
 {
     w = min(w, 100-6);
     fl_color(0,0,0);
     fl_line_style(FL_SOLID, 1);
     fl_color(80,80,80);
     fl_rectf(x,y+4,100,12);
-    fl_color(0xeb,0x90,0x00);
+    if(active)
+        fl_color(0xeb,0x90,0x00);
+    else
+        fl_color(0xa0,0x50,0x00);
     fl_rectf(x,y+4,w,12);
     fl_color(0,0,0);
     fl_rect(x,y+4,100,12);
