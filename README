@@ -1,1 +1,48 @@
 Experimental Testbed Program For GUI/UX Stuff
+
+Features To Explore
+-------------------
+
+- Midi Learning
+- General OSC connectivity
+- Undoing/Redo
+- General Parameters Organization
+
+How to Use
+----------
+
+Left click on schematic elements to reveal local controls
+
+Within the control panels
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1) Left click   - normal
+2) Middle click - midi edit window (we'll get to that later)
+3) Right click  - quick learn
+
+For MIDI learning, there is additionally an overlay to show the current status
+of the system.
+This can be toggled by clicking on MIDI in the upper right
+(clicking undo does nothing).
+Now when learning with the overlay on, one click will learn the coarse control
+and another will record the fine.
+Mapping many things at once is quite simple and encouraged (though the overlay
+might start getting a bit weird if over 26 are ever pending at once).
+These can be killed off in the midi edit window which you can get to via middle
+click.
+In this window the size of the scaling, the type of the scaling (this is
+disabled for now) and the mappings can be edited.
+
+On the right there is an undo stack currently capped to 20 events.
+Clicking on any of those entries will revert the state to a prior point in time.
+If a parameter is changed within 2 seconds of it's last change this is merged in
+to a previous undo event (so wiggling groups of controls around does not
+flood this window out).
+
+Anything sent from the window results in some virtual midi events when
+parameters are mapped, so moving mapped widgets or using undo should send out
+the proper undo events.
+
+Build deps:
+- A recent version of rtosc [ https://github.com/fundamental/rtosc ]
+- A recent version of ntk or fltk>=1.3.0
