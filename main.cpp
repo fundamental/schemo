@@ -102,6 +102,10 @@ public:
     int state;
 };
 
+#ifndef NTK
+#define NTK 0
+#endif
+
 int main()
 {
     Synth synth;

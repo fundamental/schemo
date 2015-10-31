@@ -135,6 +135,8 @@ void sinplot2(int x, int y, int w, int h)
 
 void plot(int x, int y, int w, int h, float *smps)
 {
+    static long long calls = 0;
+    printf("call %lld\n", calls++);
     fl_line_style(FL_SOLID, 2);
     fl_color(0xdb,0x70,0x00);
     fl_begin_polygon();

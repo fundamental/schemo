@@ -153,9 +153,63 @@ struct OscilState {
 
 struct Synth_
 {
+
+    void osc_doc(void) {
+        puts("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        puts("<osc_unit format_version=\"1.0\">");
+        puts(" <meta>");
+        puts("  <name>schemo</name>");
+        puts("  <uri>http://fundamental-code.com/wiki/schemo/</uri>");
+        puts("  <doc_origin>http://where.to/?find=this&amp;xml_file</doc_origin>");
+        puts("  <author><firstname>Mark</firstname><lastname>McCurry</lastname></author>");
+        puts(" </meta>");
+        char buffer[1024];
+        memset(buffer, 0, sizeof(buffer));
+        rtosc::walk_ports(&ports,
+                buffer, 1024, NULL,
+                [](const rtosc::Port*p, const char *name, void *) {
+                auto meta = p->meta();
+                if(meta.find("parameter") != p->meta().end()) {
+                    char type = 0;
+                    const char *foo = index(p->name, ':');
+                    if(index(foo, 'f'))
+                        type = 'f';
+                    else if(index(foo, 'i'))
+                        type = 'i';
+                    if(!type) return;
+
+                    printf(" <message_in pattern=\"%s\" typetag=\"%c\">\n", name, type);
+                    printf("  <desc>Set Value of %s</desc>\n", p->meta()["documentation"]);
+                    if(meta.find("min") != meta.end() && meta.find("max") != meta.end())
+                    {
+                        printf("  <param_%c symbol=\"x\" units=\"%s\">", type, meta["unit"]);
+                        printf("   <range_min_max min=\"%s\" lmin=\"[\" lmax=\"]\" max=\"%s\"/>", meta["min"], meta["max"]);
+                        printf("  </param_%c>", type);
+                    } else
+                        printf("  <param_%c symbol=\"x\" units=\"%s\"/>\n", type, meta["unit"]);
+                    printf(" </message_in>\n");
+                    printf(" <message_in pattern=\"%s\" typetag=\"\">\n", name);
+                    printf("  <desc>Get Value of %s</desc>\n", p->meta()["documentation"]);
+                    printf(" </message_in>\n");
+                    printf(" <message_out pattern=\"%s\" typetag=\"%c\">\n", name, type);
+                    printf("  <desc>Value of %s</desc>\n", p->meta()["documentation"]);
+                    if(meta.find("min") != meta.end() && meta.find("max") != meta.end())
+                    {
+                        printf("  <param_%c symbol=\"x\" units=\"%s\">", type, meta["unit"]);
+                        printf("   <range_min_max min=\"%s\" lmin=\"[\" lmax=\"]\" max=\"%s\"/>", meta["min"], meta["max"]);
+                        printf("  </param_%c>", type);
+                    } else
+                        printf("  <param_%c symbol=\"x\" unit=\"%s\"/>\n", type, meta["unit"]);
+                    printf(" </message_out>\n");
+                }
+                });
+        printf("</osc_unit>\n");
+    }
+
     Synth_(void)
         :osc1(osc1p), osc2(osc2p), env(envp)
-    {}
+    {
+    }
     NoteActivity notes;
     float baseFreq = 440.0;
     bool  gate     = false;
@@ -183,6 +237,7 @@ Ports Synth_::ports = {
     midi_rt.bindPort(),
     {"virtual_midi_cc:ii", 0, 0, [](const char *msg, rtosc::RtData &d)
         {
+            (void) d;
             int val = rtosc_argument(msg, 0).i;
             int cc = rtosc_argument(msg, 1).i;
             send_cc(cc,val);
@@ -500,7 +555,7 @@ void handleEvents(void)
     d.matches = 0;
     while(uToB.hasNext()) {
         Synth_::ports.dispatch(uToB.read()+1, d);
-        fprintf(stderr, "backend '%s'\n", uToB.peak());
+        //fprintf(stderr, "backend '%s'\n", uToB.peak());
         if(d.matches == 0)
             fprintf(stderr, "MISSING ADDRESS '%s'\n", uToB.peak());
         d.matches = 0;
@@ -579,9 +634,6 @@ void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
     while(bToU.hasNext()) {
         //assume all messages are UI only FIXME
         msg_t msg = bToU.read();
-        //printf("return address pre '%s'\n", msg);
-        //if(!strcmp("f",rtosc_argument_string(msg)))
-        //    printf("    val<%f>\n", rtosc_argument(msg,0).f);
         if(!strcmp("/undo_pause", msg)) {
             recording_undo = false;
             continue;
@@ -602,7 +654,6 @@ void handleUpdates(std::function<void(const char *addr, std::string, float)> cb,
         } else if(!strcmp("/broadcast", msg))
             continue;
         const Port *p = getPort(Synth_::ports, msg);
-        //printf("return address post '%s'\n", msg);
         assert(p);
         char type = portType(p->name);
         if(type == 'T') {
